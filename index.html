@@ -84,6 +84,7 @@
             let mcdTable1; // Global reference for McDonald's Table 1
             let mcdCart = []; // McDonald's Cart
             let pvrCart = []; // PVR Cart
+            let selectedPvrMovie = null;
             let pvrSnackGroup; // PVR Snacks Group
 
             // Suchwita State
@@ -104,9 +105,136 @@
                 'The Weeknd': 'https://open.spotify.com/artist/1Xyo4u8uXC1ZmMpatF05PJ'
             }; // Flag for Photobooth interaction
 
+            // Asset Loading
+            const textureLoader = new THREE.TextureLoader();
+            const triptiImages = [
+                'WhatsApp Image 2025-12-03 at 3.53.24 PM.jpeg',
+                'WhatsApp Image 2025-12-04 at 2.17.24 PM.jpeg',
+                'WhatsApp Image 2025-12-04 at 5.51.11 PM.jpeg',
+                'WhatsApp Image 2025-12-04 at 5.52.32 PM.jpeg',
+                'WhatsApp Image 2025-12-04 at 5.52.33 PM (1).jpeg',
+                'WhatsApp Image 2025-12-04 at 5.52.33 PM (2).jpeg',
+                'WhatsApp Image 2025-12-04 at 5.52.33 PM.jpeg',
+                'WhatsApp Image 2025-12-04 at 5.52.34 PM.jpeg'
+            ];
+
+            // Joystick State
+            let joystickInput = { x: 0, y: 0 };
+
+            // Create Joystick UI
+            const joystickZone = document.createElement('div');
+            joystickZone.id = 'joystick-zone';
+            joystickZone.style.cssText = "position:fixed; bottom:30px; left:30px; width:120px; height:120px; background:rgba(50, 50, 50, 0.8); border:2px solid #555; border-radius:50%; z-index:9999; touch-action:none; display:none;"; // Hidden by default
+
+            // Action Button (Bottom Right)
+            const actionBtn = document.createElement('div');
+            actionBtn.id = 'mobile-action-btn';
+            actionBtn.style.cssText = "position:fixed; bottom:30px; right:30px; width:80px; height:80px; background:rgba(255, 255, 255, 0.2); border:2px solid white; border-radius:50%; z-index:9999; display:none; justify-content:center; align-items:center; color:white; font-weight:bold; font-family:sans-serif; font-size: 24px; user-select:none; pointer-events:auto;";
+            actionBtn.innerText = "E";
+            document.body.appendChild(actionBtn);
+
+            // Strict Mobile Detection
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+            // Show on mobile devices OR very small screens
+            if (isMobile || window.innerWidth <= 768) {
+                joystickZone.style.display = 'block';
+                actionBtn.style.display = 'flex';
+            }
+
+            // Action Button Listener
+            actionBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (activeInteraction) {
+                    activeInteraction.action();
+                    // Visual Feedback
+                    actionBtn.style.background = "rgba(255, 255, 255, 0.5)";
+                    setTimeout(() => actionBtn.style.background = "rgba(255, 255, 255, 0.2)", 100);
+                }
+            }, { passive: false });
+
+
+
+            // Arrows
+            const arrowStyle = "position:absolute; width:0; height:0; border-style:solid;";
+            joystickZone.innerHTML = `
+                <div style="${arrowStyle} border-width:0 10px 15px 10px; border-color:transparent transparent white transparent; top:5px; left:50%; transform:translateX(-50%);"></div> <!-- Up -->
+                <div style="${arrowStyle} border-width:15px 10px 0 10px; border-color:white transparent transparent transparent; bottom:5px; left:50%; transform:translateX(-50%);"></div> <!-- Down -->
+                <div style="${arrowStyle} border-width:10px 15px 10px 0; border-color:transparent white transparent transparent; top:50%; left:5px; transform:translateY(-50%);"></div> <!-- Left -->
+                <div style="${arrowStyle} border-width:10px 0 10px 15px; border-color:transparent transparent transparent white; top:50%; right:5px; transform:translateY(-50%);"></div> <!-- Right -->
+                <div id="joystick-stick" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:60px; height:60px; background:#AAAAAA; border-radius:50%; box-shadow: 0 0 10px black;"></div>
+            `;
+            document.body.appendChild(joystickZone);
+
+            const stick = document.getElementById('joystick-stick');
+            const maxRadius = 30; // 60 radius - 30 stick radius = 30 movement
+
+            // Joystick Logic
+            joystickZone.addEventListener('touchstart', handleJoystick, { passive: false });
+            joystickZone.addEventListener('touchmove', handleJoystick, { passive: false });
+            joystickZone.addEventListener('touchend', resetJoystick);
+
+            function handleJoystick(e) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const rect = joystickZone.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+
+                let dx = touch.clientX - centerX;
+                let dy = touch.clientY - centerY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                // Limit movement
+                if (distance > maxRadius) {
+                    const angle = Math.atan2(dy, dx);
+                    dx = Math.cos(angle) * maxRadius;
+                    dy = Math.sin(angle) * maxRadius;
+                }
+
+                // Move Stick
+                stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+                // Update Input (-1 to 1)
+                joystickInput.x = dx / maxRadius;
+                joystickInput.y = dy / maxRadius;
+            }
+
+            function resetJoystick() {
+                stick.style.transform = "translate(-50%, -50%)";
+                joystickInput = { x: 0, y: 0 };
+            }
+
+            // Camera Control (Right Screen Touch)
+            document.body.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 0) return;
+                const touch = e.touches[0];
+                if (touch.clientX > window.innerWidth / 2 && !isOrbiting) {
+                    // Rotate Tripti based on horizontal movement
+                    if (lastTouchX !== null) {
+                        const deltaX = touch.clientX - lastTouchX;
+                        tripti.rotation.y -= deltaX * 0.005;
+                    }
+                    lastTouchX = touch.clientX;
+                }
+            }, { passive: false });
+
+            let lastTouchX = null;
+            document.body.addEventListener('touchstart', (e) => {
+                if (e.touches[0].clientX > window.innerWidth / 2) {
+                    lastTouchX = e.touches[0].clientX;
+                }
+            });
+            document.body.addEventListener('touchend', () => {
+                lastTouchX = null;
+            });
+
+            let lastSitTime = 0;
             // Photobooth Key Listener
             window.addEventListener('keydown', (e) => {
                 if (e.key.toLowerCase() === 'e' && isSittingInPhotobooth) {
+                    // Prevent immediate trigger after sitting
+                    if (Date.now() - lastSitTime < 1000) return;
                     takePhotoSequence();
                 }
             });
@@ -119,7 +247,7 @@
 
                 const countdown = document.getElementById('countdown');
                 const flash = document.getElementById('flash-overlay');
-                const strip = document.getElementById('photo-strip');
+                const resultModal = document.getElementById('photo-result-modal');
 
                 // 1. Countdown
                 countdown.style.display = 'block';
@@ -139,14 +267,37 @@
                         setTimeout(() => {
                             flash.style.opacity = 0;
 
-                            // 3. Show Result
-                            strip.style.display = 'block';
-                            awardBadge('Photogenic');
-                            addItem('Photo Strip');
+                            // 3. Generate & Show Result
+                            const container = document.getElementById('photo-strip-container');
+                            container.innerHTML = ''; // Clear previous
 
-                            // 4. Exit Logic (handled by Close button)
-                            document.getElementById('close-strip').onclick = () => {
-                                strip.style.display = 'none';
+                            // Pick 3 random unique images
+                            const shuffled = [...triptiImages].sort(() => 0.5 - Math.random());
+                            const selected = shuffled.slice(0, 3);
+
+                            selected.forEach(imgSrc => {
+                                const img = document.createElement('img');
+                                img.src = imgSrc;
+                                img.style.cssText = "width:280px; max-width:100%; display:block; border: 4px solid white; border-radius:2px; margin-bottom: 5px;";
+                                container.appendChild(img);
+                            });
+
+                            // Force display block to ensure visibility
+                            resultModal.style.display = 'block';
+
+                            // 4. Exit Logic (Wait for user to click Keep)
+                            const closeBtn = document.getElementById('close-photo-result');
+                            // Remove any existing listeners to prevent duplicates
+                            const newCloseBtn = closeBtn.cloneNode(true);
+                            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+
+                            newCloseBtn.onclick = () => {
+                                resultModal.style.display = 'none';
+
+                                // Rewards awarded AFTER viewing
+                                awardBadge('Photogenic');
+                                addItem("Tripti's Photos");
+
                                 isSittingInPhotobooth = false;
                                 playerCanMove = true;
                                 // Teleport off stool
@@ -161,6 +312,7 @@
             // This array was the cause of the crash. Now it's defined first.
             const interactables = [];
             let activeInteraction = null;
+            let promptUI; // Global reference
             const guestsList = [];
             const confettiList = [];
             const dogTails = [];
@@ -1030,6 +1182,14 @@
                                     tripti.position.set(worldPos.x + cp.pos.x, 0.6, worldPos.z + cp.pos.z);
                                     tripti.rotation.y = cp.rot;
 
+                                    // Prevent camera swing
+                                    lastSitTime = Date.now();
+                                    tripti.updateMatrixWorld();
+                                    const relativeOffset = new THREE.Vector3(0, 4, 6);
+                                    const cameraOffset = relativeOffset.applyMatrix4(tripti.matrixWorld);
+                                    camera.position.copy(cameraOffset);
+                                    camera.lookAt(tripti.position.x, tripti.position.y + 2, tripti.position.z);
+
                                     const dlg = document.getElementById('dialogue-overlay');
                                     dlg.innerText = "[Press X to Stand Up]";
                                     dlg.style.display = 'block';
@@ -1038,33 +1198,136 @@
                         });
                     }
                     else if (b.name === 'Photobooth') {
-                        // --- Life4Cuts Style Design ---
+                        // --- Vintage Wooden Box Design ---
 
-                        // 1. Exterior (Pastel Purple)
-                        // We need to override the building color which was set by createBuilding.
-                        // Since createBuilding uses MeshStandardMaterial, we can traverse and change it?
-                        // Or just add panels over it.
-                        // Actually, createBuilding used `b.color`. Let's update `b.color` in the array?
-                        // No, the array is already processed.
-                        // Let's just traverse the group and update material color.
-                        // 1. Exterior (Pastel Purple Walls)
+                        // 1. Exterior (Dark Wood / Charcoal)
                         group.traverse((child) => {
                             if (child.isMesh && child.material.color.getHex() === 0x333333) { // Old color
-                                child.material.color.setHex(0xD1C4E9); // Pastel Purple
+                                child.material.color.setHex(0x212121); // Dark Charcoal Wood
                             }
                         });
 
-                        // Neon Sign (Blue Strip) - Keep or Remove? Prompt implied overhaul.
-                        // Let's keep the strip as accent but maybe change color? 
-                        // Prompt didn't say remove, but "create a trendy Life4Cuts exterior".
-                        // Let's keep the strip but make it pink to match? Or keep blue for contrast.
-                        // Let's keep it as is for now.
+                        // 2. Silver Trim (Vertical Strips)
+                        const trimGeo = new THREE.BoxGeometry(0.2, 8, 0.2);
+                        const trimMat = new THREE.MeshStandardMaterial({ color: 0xC0C0C0, metalness: 0.8, roughness: 0.2 });
 
-                        // Main Sign (MEMORIES)
-                        const sign = createPhotoSign();
-                        sign.position.set(0, 7, 5.1); // High on front wall
-                        group.add(sign);
+                        // Corners
+                        const t1 = new THREE.Mesh(trimGeo, trimMat); t1.position.set(-3.9, 4, 4.9); group.add(t1);
+                        const t2 = new THREE.Mesh(trimGeo, trimMat); t2.position.set(3.9, 4, 4.9); group.add(t2);
+                        const t3 = new THREE.Mesh(trimGeo, trimMat); t3.position.set(-3.9, 4, -4.9); group.add(t3);
+                        const t4 = new THREE.Mesh(trimGeo, trimMat); t4.position.set(3.9, 4, -4.9); group.add(t4);
 
+                        // Door Frame Trim
+                        const doorTrimGeo = new THREE.BoxGeometry(0.2, 6, 0.2);
+                        const dt1 = new THREE.Mesh(doorTrimGeo, trimMat); dt1.position.set(-2.1, 3, 5); group.add(dt1);
+                        const dt2 = new THREE.Mesh(doorTrimGeo, trimMat); dt2.position.set(2.1, 3, 5); group.add(dt2);
+                        const dtTop = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.2, 0.2), trimMat); dtTop.position.set(0, 6.1, 5); group.add(dtTop);
+
+
+                        // 3. Top Light Box (PHOTO BOOTH)
+                        const boxGeo = new THREE.BoxGeometry(6, 1.5, 1);
+                        const boxMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, emissive: 0x222222 });
+                        const lightBox = new THREE.Mesh(boxGeo, boxMat);
+                        lightBox.position.set(0, 8.75, 2); // Centered on roof
+                        group.add(lightBox);
+
+                        // Text Texture
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 512; canvas.height = 128;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = 'white';
+                        ctx.fillRect(0, 0, 512, 128);
+                        ctx.fillStyle = '#D32F2F'; // Bold Red
+                        ctx.font = 'bold 60px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('PHOTO BOOTH', 256, 64);
+
+                        const tex = new THREE.CanvasTexture(canvas);
+                        const signFace = new THREE.Mesh(new THREE.PlaneGeometry(5.8, 1.3), new THREE.MeshBasicMaterial({ map: tex }));
+                        signFace.position.set(0, 0, 0.51);
+                        lightBox.add(signFace);
+
+
+                        // 4. 'Hot Shots' Sign (Retro Script)
+                        const hotShotCanvas = document.createElement('canvas');
+                        hotShotCanvas.width = 256; hotShotCanvas.height = 128;
+                        const hsCtx = hotShotCanvas.getContext('2d');
+                        // Pill shape background
+                        hsCtx.fillStyle = '#FFEB3B'; // Yellow
+                        hsCtx.beginPath();
+                        hsCtx.ellipse(128, 64, 120, 50, 0, 0, Math.PI * 2);
+                        hsCtx.fill();
+                        // Text
+                        hsCtx.fillStyle = '#000000';
+                        hsCtx.font = 'italic bold 40px "Brush Script MT", cursive';
+                        hsCtx.textAlign = 'center';
+                        hsCtx.textBaseline = 'middle';
+                        hsCtx.fillText('Hot Shots', 128, 64);
+
+                        const hsTex = new THREE.CanvasTexture(hotShotCanvas);
+                        const hsSign = new THREE.Mesh(new THREE.PlaneGeometry(2, 1), new THREE.MeshBasicMaterial({ map: hsTex, transparent: true }));
+                        hsSign.position.set(0, 7.2, 5.1); // Below light box, above door
+                        group.add(hsSign);
+
+                        // 5. Messy Photo Strips (Exterior Walls)
+                        function createMessyPhoto() {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = 64; canvas.height = 128;
+                            const ctx = canvas.getContext('2d');
+                            ctx.fillStyle = 'white';
+                            ctx.fillRect(0, 0, 64, 128);
+                            ctx.fillStyle = '#222';
+                            // 4 black squares
+                            for (let i = 0; i < 4; i++) {
+                                ctx.fillRect(8, 8 + i * 30, 48, 24);
+                            }
+                            const tex = new THREE.CanvasTexture(canvas);
+                            return new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.8), new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide }));
+                        }
+
+                        for (let i = 0; i < 40; i++) {
+                            const strip = createMessyPhoto();
+                            const isLeft = Math.random() > 0.5;
+                            const wallX = isLeft ? -4.1 : 4.1; // Slightly off the wall (width 8, so radius 4)
+
+                            // Random height between 1 and 6
+                            const y = 1 + Math.random() * 5;
+                            // Random z between -4 and 4
+                            const z = (Math.random() * 8) - 4;
+
+                            strip.position.set(wallX, y, z);
+                            strip.rotation.y = isLeft ? -Math.PI / 2 : Math.PI / 2;
+                            strip.rotation.z = (Math.random() * 0.4) - 0.2; // Messy tilt
+
+                            // Slight offset to prevent z-fighting with each other
+                            strip.position.x += (Math.random() * 0.05);
+
+                            group.add(strip);
+                        }
+
+                        // 6. Photo Collection Slot (Front Bottom)
+                        // Metal Plate
+                        const slotPlate = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.0), new THREE.MeshStandardMaterial({ color: 0xC0C0C0, metalness: 0.9, roughness: 0.2 }));
+                        slotPlate.position.set(-2.5, 1.5, 5.1); // Bottom Left of entrance
+                        group.add(slotPlate);
+
+                        // Black Slot Hole
+                        const slotHole = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.15), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+                        slotHole.position.set(0, -0.2, 0.01);
+                        slotPlate.add(slotHole);
+
+                        // Yellow Arrow (Triangle)
+                        const arrowShape = new THREE.Shape();
+                        arrowShape.moveTo(-0.2, 0.2);
+                        arrowShape.lineTo(0.2, 0.2);
+                        arrowShape.lineTo(0, -0.1);
+                        arrowShape.lineTo(-0.2, 0.2);
+                        const arrowGeo = new THREE.ShapeGeometry(arrowShape);
+                        const arrowMat = new THREE.MeshBasicMaterial({ color: 0xFFEB3B, side: THREE.DoubleSide });
+                        const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+                        arrow.position.set(0, 0.2, 0.01);
+                        slotPlate.add(arrow);
                         // 2. Interior Decor (Polaroids)
                         const polaroidColors = ['#FFB7B2', '#B5EAD7', '#E2F0CB', '#FFDAC1', '#C7CEEA', '#F0E68C'];
 
@@ -1088,27 +1351,51 @@
                         const p6 = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.2), new THREE.MeshStandardMaterial({ map: createPolaroidTexture(polaroidColors[5]) }));
                         p6.position.set(5.9, 2.5, 1.5); p6.rotation.y = -Math.PI / 2; p6.rotation.z = (Math.random() * 0.2 - 0.1); group.add(p6);
 
-                        // 2. Entrance (Curtains)
-                        const curtainGeo = new THREE.BoxGeometry(2, 6, 0.2);
-                        const curtainMat = new THREE.MeshStandardMaterial({ color: 0x4a148c }); // Deep Purple
+                        // 2. Entrance (Vintage Red Velvet Curtain)
+                        // Gathered to the right side
+                        const curtainGeo = new THREE.CylinderGeometry(0.8, 1.2, 6, 16, 1, true, 0, Math.PI);
+                        const curtainMat = new THREE.MeshStandardMaterial({ color: 0x8B0000, roughness: 0.9, side: THREE.DoubleSide }); // Deep Velvet Red
+                        const curtain = new THREE.Mesh(curtainGeo, curtainMat);
+                        curtain.position.set(2.5, 3, 5); // Right side
+                        curtain.rotation.y = Math.PI / 4; // Angled slightly
+                        curtain.scale.set(1, 1, 0.5); // Flattened
+                        group.add(curtain);
 
-                        const c1 = new THREE.Mesh(curtainGeo, curtainMat);
-                        c1.position.set(-2, 3, 5);
-                        c1.rotation.y = -0.2;
-                        group.add(c1);
+                        // Tie-back (Gold)
+                        const tieGeo = new THREE.TorusGeometry(0.9, 0.1, 8, 20, Math.PI);
+                        const tieMat = new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 0.8 });
+                        const tie = new THREE.Mesh(tieGeo, tieMat);
+                        tie.position.set(2.5, 3, 5);
+                        tie.rotation.z = -0.2;
+                        group.add(tie);
 
-                        const c5 = new THREE.Mesh(curtainGeo, curtainMat);
-                        c5.position.set(2, 3, 5);
-                        c5.rotation.y = 0.2;
-                        group.add(c5);
 
                         // 3. Interior Mechanics
 
-                        // Stool (White Cylinder)
-                        const stoolGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.6);
-                        const stoolMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-                        const stool = new THREE.Mesh(stoolGeo, stoolMat);
-                        stool.position.set(0, 0.3, 0); // Center of booth
+                        // Rug (Persian Style - Dark Red/Gold)
+                        const rug = new THREE.Mesh(new THREE.BoxGeometry(3, 0.05, 4), new THREE.MeshStandardMaterial({ color: 0x5D0000 }));
+                        rug.position.set(0, 0.02, 0);
+                        group.add(rug);
+
+                        // Back Wall (Deep Red Damask)
+                        const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(7.8, 5), new THREE.MeshStandardMaterial({ color: 0x5D0000, side: THREE.DoubleSide }));
+                        backdrop.position.set(0, 2.5, -4.8); // Cover the back glass/wall
+                        group.add(backdrop);
+
+                        // Seat: Vintage Bench (Black Leather)
+                        const benchGeo = new THREE.BoxGeometry(2.5, 0.5, 1.2);
+                        const benchMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4 }); // Black Leather
+                        const stool = new THREE.Mesh(benchGeo, benchMat); // Variable name 'stool' kept for compatibility with interaction logic
+                        stool.position.set(0, 0.3, 0); // Center
+
+                        // Bench Legs
+                        const legGeo = new THREE.BoxGeometry(0.1, 0.3, 0.1);
+                        const legMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+                        const l1 = new THREE.Mesh(legGeo, legMat); l1.position.set(-1, -0.4, 0.5); stool.add(l1);
+                        const l2 = new THREE.Mesh(legGeo, legMat); l2.position.set(1, -0.4, 0.5); stool.add(l2);
+                        const l3 = new THREE.Mesh(legGeo, legMat); l3.position.set(-1, -0.4, -0.5); stool.add(l3);
+                        const l4 = new THREE.Mesh(legGeo, legMat); l4.position.set(1, -0.4, -0.5); stool.add(l4);
+
                         group.add(stool);
 
                         // Camera (Box + Lens)
@@ -1155,6 +1442,14 @@
                                 // Default rotation 0 faces +Z? Need to check Tripti's default.
                                 // Usually 0 is +Z. So Math.PI is -Z.
                                 tripti.rotation.y = Math.PI;
+
+                                // Prevent camera swing & immediate photo
+                                lastSitTime = Date.now();
+                                tripti.updateMatrixWorld();
+                                const relativeOffset = new THREE.Vector3(0, 4, 6);
+                                const cameraOffset = relativeOffset.applyMatrix4(tripti.matrixWorld);
+                                camera.position.copy(cameraOffset);
+                                camera.lookAt(tripti.position.x, tripti.position.y + 2, tripti.position.z);
 
                                 promptUI.innerText = "Press E to Take Photos";
                             }
@@ -1229,15 +1524,7 @@
                         });
                         group.add(button);
 
-                        // Interaction
-                        interactables.push({
-                            position: new THREE.Vector3(worldPos.x, 0, worldPos.z + 5),
-                            radius: 4.0,
-                            label: 'Take a Photo',
-                            action: () => {
-                                awardBadge('Photogenic');
-                            }
-                        });
+
                     }
                     else if (b.name === 'SUCHWITA') {
                         // --- Suchwita Style Design ---
@@ -1326,6 +1613,14 @@
                                 tripti.position.set(worldPos.x + 2.5, 0.6, worldPos.z);
                                 tripti.rotation.y = -Math.PI / 2; // Face Left (towards Suga)
 
+                                // Prevent camera swing
+                                lastSitTime = Date.now();
+                                tripti.updateMatrixWorld();
+                                const relativeOffset = new THREE.Vector3(0, 4, 6);
+                                const cameraOffset = relativeOffset.applyMatrix4(tripti.matrixWorld);
+                                camera.position.copy(cameraOffset);
+                                camera.lookAt(tripti.position.x, tripti.position.y + 2, tripti.position.z);
+
                                 // Show Dialogue
                                 const dlg = document.getElementById('dialogue-overlay');
                                 dlg.innerText = "Suga: Happy birthday Tripti.";
@@ -1386,6 +1681,7 @@
                             position: new THREE.Vector3(x, 1, z), // Center of building
                             radius: 6.0,
                             label: 'Attend SUCHWITA',
+                            type: 'action',
                             action: () => {
                                 karaokeMenu.style.display = 'block';
                             }
@@ -1459,6 +1755,7 @@
                             position: new THREE.Vector3(x, 1, z),
                             radius: 8.0,
                             label: 'Check Movies',
+                            type: 'action',
                             action: () => {
                                 pvrMenu.style.display = 'block';
                             }
@@ -1776,6 +2073,7 @@
                                 mesh: dogGroup, // Dynamic tracking
                                 radius: 3.0,
                                 label: `Pet ${name}`,
+                                type: 'action',
                                 action: () => {
                                     alert(`You petted ${name}!`);
                                     awardBadge('Doggo Friend');
@@ -1833,11 +2131,39 @@
             badgeUI.innerText = `Badges: 0/${totalBadges}`;
             uiLayer.appendChild(badgeUI);
 
+            // Controls Cheat Sheet
+            const controlsUI = document.createElement('div');
+            controlsUI.style.cssText = "position:absolute; top:60px; right:20px; text-align:right; color:rgba(255, 255, 255, 0.8); font-size:14px; font-family:monospace; line-height:1.5; text-shadow: 1px 1px 2px black; pointer-events:none; background:rgba(0, 0, 0, 0.3); padding:10px; border-radius:5px;";
+            controlsUI.innerHTML = `
+                <b>Controls</b><br>
+                Move: Arrow Keys<br>
+                Look: Mouse<br>
+                Interact: E<br>
+                Sit: S<br>
+                Inventory: I<br>
+                Toggle Cam: M<br>
+                Stop Walking: Q<br>
+                Close Menus: X
+            `;
+            uiLayer.appendChild(controlsUI);
+
             // Prompt UI
-            const promptUI = document.createElement('div');
-            promptUI.style.cssText = "position:absolute; bottom:100px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); color:white; padding:10px 20px; border-radius:8px; display:block;";
+            promptUI = document.createElement('div');
+            promptUI.id = 'prompt-ui';
+            promptUI.style.cssText = "position:absolute; bottom:100px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); color:white; padding:10px 20px; border-radius:8px; display:block; cursor:pointer; pointer-events:auto;";
             promptUI.innerText = "Press M to Toggle Camera | X to Close Menus | Press E to Interact";
             uiLayer.appendChild(promptUI);
+
+            // Make Prompt Clickable
+            promptUI.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (activeInteraction) {
+                    activeInteraction.action();
+                }
+            }, { passive: false });
+            promptUI.addEventListener('click', () => {
+                if (activeInteraction) activeInteraction.action();
+            });
 
             // Photobooth UI elements
             const flashOverlay = document.createElement('div');
@@ -1850,19 +2176,17 @@
             countdownDisplay.style.cssText = "position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); color:white; font-size:100px; font-weight:bold; text-shadow: 0 0 20px black; display:none; pointer-events:none; z-index:1001;";
             uiLayer.appendChild(countdownDisplay);
 
-            const photoStripDisplay = document.createElement('div');
-            photoStripDisplay.id = 'photo-strip';
-            photoStripDisplay.style.cssText = "position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; padding:20px; border-radius:10px; display:none; text-align:center; box-shadow: 0 0 50px rgba(0,0,0,0.5); z-index:1002; pointer-events: auto;";
-            photoStripDisplay.innerHTML = `
-                <h2>Cute! ✨</h2>
-                <div class="strip-container" style="display:flex; flex-direction:column; gap:10px; background:#eee; padding:10px; border:1px solid #ccc;">
-                    <div class="strip-photo" style="width:100px; height:120px; background:#FFC0CB; border:5px solid white; display:flex; align-items:center; justify-content:center;">📸</div>
-                    <div class="strip-photo" style="width:100px; height:120px; background:#87CEEB; border:5px solid white; display:flex; align-items:center; justify-content:center;">✌️</div>
-                    <div class="strip-photo" style="width:100px; height:120px; background:#FFFFE0; border:5px solid white; display:flex; align-items:center; justify-content:center;">🤪</div>
+            const photoResultModal = document.createElement('div');
+            photoResultModal.id = 'photo-result-modal';
+            photoResultModal.style.cssText = "position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; border-radius:5px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index:2000; display:none; text-align:center; max-width:90%; max-height:90vh; overflow-y:auto; pointer-events: auto;";
+            photoResultModal.innerHTML = `
+                <div id="photo-strip-container" style="background:black; padding:10px; border-radius:2px; display:inline-flex; flex-direction:column; gap:10px; align-items:center;">
+                    <!-- Images will be injected here -->
                 </div>
-                <button id="close-strip" style="margin-top:20px; background:#4a148c; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">Keep Photo Strip</button>
+                <p style="font-family:'Brush Script MT', cursive; font-size:24px; margin:15px 0 10px 0; color:#333;">Best Memories! ❤️</p>
+                <button id="close-photo-result" style="background:#333; color:white; border:none; padding:10px 20px; font-size:16px; cursor:pointer; border-radius:5px;">Keep in Album</button>
             `;
-            uiLayer.appendChild(photoStripDisplay);
+            uiLayer.appendChild(photoResultModal);
 
             // Inventory UI
             const inventoryUI = document.createElement('div');
@@ -2009,23 +2333,36 @@
                     <!-- Column 1: F&B Menu -->
                     <div style="flex:1; border-right:1px solid #444; padding-right:20px;">
                         <h3 style="color:#ffcc80; border-bottom:1px solid #444; padding-bottom:10px;">Snacks & Drinks 🍿</h3>
-                        <div id="pvr-food-options" style="display:flex; flex-direction:column; gap:10px;">
+                        <div id="pvr-food-options" style="display:flex; flex-direction:column; gap:10px; max-height: 250px; overflow-y: auto;">
                             <button class="pvr-item-btn" data-item="Classic Salted Popcorn">🍿 Classic Salted Popcorn</button>
                             <button class="pvr-item-btn" data-item="Cheese Popcorn">🧀 Cheese Popcorn</button>
                             <button class="pvr-item-btn" data-item="Pepsi (Large)">🥤 Pepsi (Large)</button>
                             <button class="pvr-item-btn" data-item="Nachos with Salsa">🌮 Nachos with Salsa</button>
                             <button class="pvr-item-btn" data-item="Chicken Hotdog">🌭 Chicken Hotdog</button>
                         </div>
-                        <div id="pvr-cart-display" style="background:#222; color:#aaa; padding:10px; margin-top:15px; border-radius:5px; font-style:italic;">Selected Snacks: None</div>
+                        
+                        <h4 style="color:#aaa; margin-top:20px; border-bottom:1px solid #444; padding-bottom:5px; margin-bottom: 10px;">Your Tray:</h4>
+                        <div id="pvr-cart-container" style="background:#222; padding:10px; border-radius:5px; min-height: 100px; max-height: 150px; overflow-y: auto;">
+                            <p id="pvr-empty-msg" style="color:#666; font-style:italic; margin:0; text-align:center; padding-top: 30px;">No snacks selected</p>
+                            <ul id="pvr-cart-list" style="list-style:none; padding:0; margin:0;"></ul>
+                        </div>
                     </div>
 
-                    <!-- Column 2: Movie Gallery -->
+                    <!-- Column 2: Movie Selection -->
                     <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center;">
                         <h3 style="color:#ffcc80; margin-bottom:20px;">Select Show 🎬</h3>
-                        <button id="btn-open-gallery" style="background:#e50914; color:white; border:none; padding:20px 40px; border-radius:10px; font-size:20px; font-weight:bold; cursor:pointer; width:100%;">
+                        
+                        <div id="pvr-selected-movie" style="background:#222; padding:20px; border-radius:10px; width:100%; text-align:center; margin-bottom:20px; border: 1px solid #444;">
+                            <span style="color:#aaa; font-style:italic;">No movie selected</span>
+                        </div>
+
+                        <button id="btn-open-gallery" style="background:#e50914; color:white; border:none; padding:15px 30px; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer; width:100%; margin-bottom: 20px;">
                             Browse Movie Gallery 🎞️
                         </button>
-                        <p style="color:#aaa; margin-top:10px; font-size:14px;">Click to view available movies</p>
+                        
+                        <button id="pvr-place-order" style="background:#4caf50; color:white; border:none; padding:15px 30px; border-radius:10px; font-size:20px; font-weight:bold; cursor:pointer; width:100%; opacity: 0.5; pointer-events: none;">
+                            Place Order ✅
+                        </button>
                     </div>
                 </div>
                 <div style="text-align:center; margin-top:20px;">
@@ -2043,16 +2380,46 @@
             // PVR Logic
             setTimeout(() => {
                 const pvrBtns = pvrMenu.querySelectorAll('.pvr-item-btn');
-                const pvrCartDisplay = pvrMenu.querySelector('#pvr-cart-display');
                 const btnGallery = pvrMenu.querySelector('#btn-open-gallery');
+
+                function updatePvrCartUI() {
+                    const list = document.getElementById('pvr-cart-list');
+                    const emptyMsg = document.getElementById('pvr-empty-msg');
+
+                    if (!list || !emptyMsg) return;
+
+                    list.innerHTML = '';
+
+                    if (pvrCart.length === 0) {
+                        emptyMsg.style.display = 'block';
+                    } else {
+                        emptyMsg.style.display = 'none';
+                        pvrCart.forEach((item, index) => {
+                            const li = document.createElement('li');
+                            li.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:#333; margin-bottom:5px; padding:8px 10px; border-radius:3px; color:white; border-left: 3px solid #ffeb3b;";
+                            li.innerHTML = `
+                                <span>${item}</span>
+                                <button class="remove-pvr-item" data-index="${index}" style="background:#e50914; color:white; border:none; border-radius:3px; cursor:pointer; padding:2px 8px; font-size:12px;">✕</button>
+                            `;
+                            list.appendChild(li);
+                        });
+
+                        // Add remove listeners
+                        list.querySelectorAll('.remove-pvr-item').forEach(btn => {
+                            btn.onclick = (e) => {
+                                const idx = parseInt(e.target.getAttribute('data-index'));
+                                pvrCart.splice(idx, 1);
+                                updatePvrCartUI();
+                            };
+                        });
+                    }
+                }
 
                 pvrBtns.forEach(btn => {
                     btn.onclick = () => {
                         const item = btn.getAttribute('data-item');
                         pvrCart.push(item);
-                        pvrCartDisplay.innerText = "Selected Snacks: " + pvrCart.join(', ');
-                        pvrCartDisplay.style.color = "white";
-                        pvrCartDisplay.style.fontStyle = "normal";
+                        updatePvrCartUI();
 
                         // Visual Feedback
                         btn.style.transform = "scale(0.95)";
@@ -2066,7 +2433,7 @@
                         alert("Snacks collected! Enjoy the movie. 🍿");
                         // Clear cart logic if needed, but keeping it for now as 'collected'
                         pvrCart = [];
-                        pvrCartDisplay.innerText = "Selected Snacks: None";
+                        updatePvrCartUI();
                     }
                     pvrMenu.style.display = 'none';
                     document.getElementById('movie-gallery-modal').style.display = 'block';
@@ -2117,15 +2484,28 @@
                 cards.forEach(card => {
                     card.onclick = () => {
                         const url = card.getAttribute('data-url');
+                        const title = card.querySelector('h3').innerText;
 
-                        // Reset Keys to prevent auto-walking
-                        Object.keys(keys).forEach(key => keys[key] = false);
+                        // Set Selection
+                        selectedPvrMovie = { title, url };
 
-                        window.open(url, '_blank');
-                        awardBadge('Movie Buff');
+                        // Update PVR Menu UI
+                        const movieDisplay = document.getElementById('pvr-selected-movie');
+                        const placeOrderBtn = document.getElementById('pvr-place-order');
+
+                        if (movieDisplay) {
+                            movieDisplay.innerHTML = `<span style="color:#ffeb3b; font-weight:bold; font-size:18px;">${title}</span>`;
+                            movieDisplay.style.borderColor = "#ffeb3b";
+                        }
+
+                        if (placeOrderBtn) {
+                            placeOrderBtn.style.opacity = 1;
+                            placeOrderBtn.style.pointerEvents = 'auto';
+                        }
+
+                        // Return to Menu
                         galleryModal.style.display = 'none';
-                        playerCanMove = true;
-                        triggerMovieMode();
+                        pvrMenu.style.display = 'block';
                     };
                 });
             }, 0);
@@ -2300,29 +2680,9 @@
             countdownOverlay.style.cssText = "position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); color:white; font-size:100px; font-weight:bold; text-shadow: 0 0 20px black; display:none; pointer-events:none;";
             uiLayer.appendChild(countdownOverlay);
 
-            const photoStripModal = document.createElement('div');
-            photoStripModal.id = 'photo-strip-modal';
-            photoStripModal.style.cssText = "position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; padding:20px; border-radius:10px; display:none; text-align:center; box-shadow: 0 0 50px rgba(0,0,0,0.5); pointer-events: auto;";
-            photoStripModal.innerHTML = `
-                <h2>Cute! ✨</h2>
-                <div style="display:flex; flex-direction:column; gap:10px; background:#eee; padding:10px; border:1px solid #ccc;">
-                    <div style="width:100px; height:120px; background:#FFC0CB; border:5px solid white; display:flex; align-items:center; justify-content:center;">😊</div>
-                    <div style="width:100px; height:120px; background:#87CEEB; border:5px solid white; display:flex; align-items:center; justify-content:center;">✌️</div>
-                    <div style="width:100px; height:120px; background:#FFFFE0; border:5px solid white; display:flex; align-items:center; justify-content:center;">🤪</div>
-                </div>
-                <button id="btn-keep-photo" style="margin-top:20px; background:#4a148c; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">Keep Photo Strip</button>
-            `;
-            uiLayer.appendChild(photoStripModal);
 
-            setTimeout(() => {
-                document.getElementById('btn-keep-photo').onclick = () => {
-                    photoStripModal.style.display = 'none';
-                    awardBadge('Photogenic');
-                    addItem('Cute Photo Strip');
-                    playerCanMove = true;
-                    alert('Added Photo Strip to Inventory!');
-                };
-            }, 0);
+
+
 
             // Dialogue Overlay (Suchwita)
             const dialogueOverlay = document.createElement('div');
@@ -2379,21 +2739,62 @@
                 pillar.position.set(x, 5, z);
                 partyGroup.add(pillar);
 
-                // Ribbons on front pillars (i=0 and i=1)
-                if (i === 0 || i === 1) {
-                    const ribbonColor = i === 0 ? 0x00FFFF : 0xFF00FF; // Cyan / Magenta
-                    for (let r = 0; r < 20; r++) {
-                        const ring = new THREE.Mesh(
-                            new THREE.TorusGeometry(0.4, 0.05, 8, 16),
-                            new THREE.MeshStandardMaterial({ color: ribbonColor })
+                // Streamers (Helical Ribbon)
+                const streamerColor = i % 2 === 0 ? 0x00FFFF : 0xFF00FF; // Cyan / Magenta
+                const points = [];
+                for (let j = 0; j <= 50; j++) {
+                    const t = j / 50;
+                    const h = t * 10; // Height 0 to 10
+                    const r = 0.5; // Radius slightly larger than pillar
+                    const theta = t * Math.PI * 8; // 4 turns
+                    points.push(new THREE.Vector3(Math.cos(theta) * r, h, Math.sin(theta) * r));
+                }
+                const streamerPath = new THREE.CatmullRomCurve3(points);
+                const streamerGeo = new THREE.TubeGeometry(streamerPath, 50, 0.05, 8, false);
+                const streamerMat = new THREE.MeshStandardMaterial({ color: streamerColor, side: THREE.DoubleSide });
+                const streamer = new THREE.Mesh(streamerGeo, streamerMat);
+                streamer.position.set(x, 0, z); // Base of pillar
+                partyGroup.add(streamer);
+
+                // Fairy Lights (Helical String with Emissive Spheres)
+                const lightPoints = [];
+                for (let j = 0; j <= 40; j++) {
+                    const t = j / 40;
+                    const h = t * 10;
+                    const r = 0.6; // Slightly wider than streamers
+                    const theta = t * Math.PI * 6 + Math.PI; // Offset rotation
+
+                    const lx = Math.cos(theta) * r;
+                    const lz = Math.sin(theta) * r;
+
+                    // Wire
+                    lightPoints.push(new THREE.Vector3(lx, h, lz));
+
+                    // Bulb
+                    if (j % 2 === 0) {
+                        const bulbColor = Math.random() > 0.5 ? 0xFFD700 : 0xFFFFFF; // Gold / White
+                        const bulb = new THREE.Mesh(
+                            new THREE.SphereGeometry(0.05, 8, 8),
+                            new THREE.MeshStandardMaterial({ color: bulbColor, emissive: bulbColor, emissiveIntensity: 0.8 })
                         );
-                        ring.position.set(x, r * 0.5, z);
-                        ring.rotation.x = Math.PI / 2 + 0.2;
-                        ring.rotation.y = r * 0.5;
-                        partyGroup.add(ring);
+                        bulb.position.set(x + lx, h, z + lz);
+                        partyGroup.add(bulb);
+
+                        // Actual Light (Expensive, so limit or use low intensity)
+                        // const pointLight = new THREE.PointLight(bulbColor, 0.2, 2);
+                        // pointLight.position.copy(bulb.position);
+                        // partyGroup.add(pointLight);
                     }
                 }
+                // Wire Mesh
+                const wirePath = new THREE.CatmullRomCurve3(lightPoints);
+                const wireGeo = new THREE.TubeGeometry(wirePath, 40, 0.01, 4, false);
+                const wireMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+                const wire = new THREE.Mesh(wireGeo, wireMat);
+                wire.position.set(x, 0, z);
+                partyGroup.add(wire);
             }
+
 
             // 3. Roof (Canopy)
             const roof = new THREE.Mesh(
@@ -2563,11 +2964,12 @@
                     } else {
                         promptUI.innerText = `Press M to Toggle Camera | X to Close Menus | Press E to ${nearby.label}`;
                     }
+                    promptUI.style.display = 'block';
                 } else {
                     activeInteraction = null;
                     promptUI.innerText = "Press M to Toggle Camera | X to Close Menus | Press E to Interact";
+                    promptUI.style.display = 'block'; // Or 'none' if you want to hide it when idle, but user request implies showing default text
                 }
-                promptUI.style.display = 'block';
             }
 
             function awardBadge(name) {
@@ -2753,7 +3155,7 @@
             // Inputs
             // Click listener removed for pointer lock
             document.addEventListener('mousemove', (e) => {
-                if (document.pointerLockElement === document.body && !isOrbiting) {
+                if (document.pointerLockElement === document.body && !isOrbiting && playerCanMove) {
                     tripti.rotation.y -= e.movementX * 0.002;
                 }
             });
@@ -2762,7 +3164,7 @@
             document.body.addEventListener('click', (e) => {
                 if (e.target.classList.contains('close-btn') || e.target.innerText === 'Close' || e.target.innerText === 'Close ❌') {
                     // Hide all menus
-                    const menus = ['karaoke-menu', 'pvr-menu', 'inventory-panel', 'mcd-menu', 'photo-strip-modal', 'dialogue-overlay', 'movie-gallery-modal'];
+                    const menus = ['karaoke-menu', 'pvr-menu', 'inventory-panel', 'mcd-menu', 'photo-result-modal', 'dialogue-overlay', 'movie-gallery-modal'];
                     menus.forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.style.display = 'none';
@@ -2779,13 +3181,21 @@
                     inv.style.display = inv.style.display === 'none' ? 'block' : 'none';
                 }
 
+                // Emergency Stop (Q)
+                if (e.code === 'KeyQ') {
+                    Object.keys(keys).forEach(key => keys[key] = false);
+                    joystickInput = { x: 0, y: 0 };
+                    const stick = document.getElementById('joystick-stick');
+                    if (stick) stick.style.transform = "translate(-50%, -50%)";
+                }
+
                 // Interaction Logic
                 if (activeInteraction) {
-                    // 'E' for Action (Default)
-                    if (e.code === 'KeyE' && (!activeInteraction.type || activeInteraction.type === 'action')) {
+                    // 'E' for Action OR Sit (User Preference)
+                    if (e.code === 'KeyE') {
                         activeInteraction.action();
                     }
-                    // 'S' for Sit
+                    // 'S' for Sit (Specific)
                     if (e.code === 'KeyS' && activeInteraction.type === 'sit') {
                         activeInteraction.action();
                     }
@@ -2794,7 +3204,7 @@
                 // Global Close / Stand Up (X)
                 if (e.key === 'x' || e.key === 'X') {
                     // 1. Close All Menus
-                    const menus = ['karaoke-menu', 'pvr-menu', 'inventory-panel', 'mcd-menu', 'photo-strip-modal', 'dialogue-overlay', 'movie-gallery-modal'];
+                    const menus = ['karaoke-menu', 'pvr-menu', 'inventory-panel', 'mcd-menu', 'photo-result-modal', 'dialogue-overlay', 'movie-gallery-modal'];
                     menus.forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.style.display = 'none';
@@ -2857,6 +3267,56 @@
                 guestsList.forEach(g => {
                     g.scale.setScalar(1 + Math.sin(time) * 0.1); // Pulse/Clap
                 });
+
+                // Movement Logic (Keyboard + Joystick)
+                if (playerCanMove && !isOrbiting) {
+                    // Movement (Local Space)
+                    let moveZ = 0;
+                    let moveX = 0;
+
+                    // Keyboard
+                    if (keys.ArrowUp) moveZ = -1;
+                    if (keys.ArrowDown) moveZ = 1;
+                    if (keys.ArrowLeft) moveX = -1;
+                    if (keys.ArrowRight) moveX = 1;
+
+                    // Joystick Override
+                    if (joystickInput.x !== 0 || joystickInput.y !== 0) {
+                        moveX = joystickInput.x;
+                        moveZ = joystickInput.y;
+                    }
+
+                    if (moveZ !== 0 || moveX !== 0) {
+                        tripti.translateZ(moveZ * speed);
+                        tripti.translateX(moveX * speed);
+                        tripti.position.y = Math.abs(Math.sin(Date.now() * 0.01)) * 0.1; // Bobbing
+                    } else {
+                        tripti.position.y = 0;
+                    }
+
+                } else if (isOrbiting) {
+                    // Orbit Camera
+                    const orbitSpeed = 0.0005;
+                    const radius = 15;
+                    const x = radius * Math.sin(Date.now() * orbitSpeed);
+                    const z = radius * Math.cos(Date.now() * orbitSpeed);
+                    camera.position.set(x, 8, z);
+                    camera.lookAt(0, 2, 0); // Look at cake
+                }
+
+                // Camera Follow (Always active unless orbiting)
+                if (!isOrbiting) {
+                    const relativeOffset = new THREE.Vector3(0, 4, 6);
+                    const cameraOffset = relativeOffset.applyMatrix4(tripti.matrixWorld);
+                    camera.position.lerp(cameraOffset, 0.1);
+                    camera.lookAt(tripti.position.x, tripti.position.y + 2, tripti.position.z);
+
+                    // Ninja Logic
+                    if (ninja.position.distanceTo(tripti.position) > 3) {
+                        ninja.lookAt(tripti.position);
+                        ninja.translateZ(speed * 0.9);
+                    }
+                }
 
                 // Dog Tail Animation
                 const tailSpeed = time * 10;
@@ -2969,16 +3429,14 @@
                     camera.lookAt(0, 2, 0); // Look at cake
                 }
 
-                // Check Interactions
-                activeInteraction = null;
-                promptUI.style.display = 'none';
-                interactables.forEach(item => {
-                    if (tripti.position.distanceTo(item.position) < item.radius) {
-                        activeInteraction = item;
-                        promptUI.innerText = "Press E to " + item.label;
-                        promptUI.style.display = 'block';
-                    }
-                });
+                // UI Update for Photobooth
+                if (isSittingInPhotobooth) {
+                    activeInteraction = null; // Prevent double-triggering 'Sit' logic
+                    promptUI.innerText = "Press E to Take Photos | Press X to Stand Up";
+                    promptUI.style.display = 'block';
+                } else {
+                    checkInteractions();
+                }
 
                 // Check McDonalds (No Interactable, just area) - REMOVED
                 // if (tripti.position.distanceTo(new THREE.Vector3(0, 0, 25)) < 10) {
