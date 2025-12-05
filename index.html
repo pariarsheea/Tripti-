@@ -2428,16 +2428,48 @@
                 });
 
                 btnGallery.onclick = () => {
-                    if (pvrCart.length > 0) {
-                        spawnPvrSnacks(pvrCart);
-                        alert("Snacks collected! Enjoy the movie. 🍿");
-                        // Clear cart logic if needed, but keeping it for now as 'collected'
-                        pvrCart = [];
-                        updatePvrCartUI();
-                    }
                     pvrMenu.style.display = 'none';
                     document.getElementById('movie-gallery-modal').style.display = 'block';
                 };
+
+                // Place Order Logic
+                const placeOrderBtn = document.getElementById('pvr-place-order');
+                if (placeOrderBtn) {
+                    placeOrderBtn.onclick = () => {
+                        if (!selectedPvrMovie) return;
+
+                        // 1. Open Netflix
+                        window.open(selectedPvrMovie.url, '_blank');
+
+                        // 2. Spawn Snacks
+                        if (pvrCart.length > 0) {
+                            spawnPvrSnacks(pvrCart);
+                            alert(`Enjoy ${selectedPvrMovie.title} with your snacks! 🍿`);
+                            pvrCart = []; // Clear cart
+                            updatePvrCartUI();
+                        } else {
+                            alert(`Enjoy ${selectedPvrMovie.title}! 🎬`);
+                        }
+
+                        // 3. Awards & Mode
+                        awardBadge('Movie Buff');
+                        triggerMovieMode();
+
+                        // 4. Close Menu & Reset
+                        pvrMenu.style.display = 'none';
+                        playerCanMove = true;
+
+                        // Reset Selection UI
+                        selectedPvrMovie = null;
+                        const movieDisplay = document.getElementById('pvr-selected-movie');
+                        if (movieDisplay) {
+                            movieDisplay.innerHTML = '<span style="color:#aaa; font-style:italic;">No movie selected</span>';
+                            movieDisplay.style.borderColor = "#444";
+                        }
+                        placeOrderBtn.style.opacity = 0.5;
+                        placeOrderBtn.style.pointerEvents = 'none';
+                    };
+                }
             }, 0);
 
             // Movie Gallery Modal
